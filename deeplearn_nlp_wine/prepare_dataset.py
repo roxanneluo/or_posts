@@ -6,6 +6,7 @@ from encoder import kPrepDataDir
 import pickle
 from pdb import set_trace as st
 from keras.preprocessing.sequence import pad_sequences
+from keras.utils.np_utils import to_categorical
 
 class DataLoader:
     def __init__(self,
@@ -23,31 +24,43 @@ class DataLoader:
             print("Loading dataset from %s" % filename)
             with open(filename, 'rb') as f:
                 state = pickle.load(f)
-                self.x, self.y = state['x'], state['y']
+                self.x, self.y, self.fn2idx = state['x'], state['y'], state['fn2idx']
         else:
             self.x, self.y = self.construct_dataset(label_path, text, fn2idx, encoder, encoder_y)
             with open(filename, 'wb') as f:
-                state = {'x': self.x, 'y': self.y}
+                state = {'x': self.x, 'y': self.y, 'fn2idx': fn2idx}
                 state = pickle.dump(state, f)
+        self.fn2idx = fn2idx
 
     def construct_dataset(self, label_path, text, fn2idx, encoder, encoder_y):
         x, y = [],[]
-        with open(label_path, 'r') as f:
-            for line in f:
-                fn, label = line[:-1].split('\t')
-                t = text[fn2idx[fn]]
-                t_encoded = encoder.encode(t)
-                y_encoded = encoder_y.encode(label)
-                x.append(t_encoded)
-                y.append(y_encoded)
+        if label_path:
+            with open(label_path, 'r') as f:
+                for line in f:
+                    fn, label = line[:-1].split('\t')
+                    t = text[fn2idx[fn]]
+                    t_encoded = encoder.encode(t)
+                    y_encoded = encoder_y.encode(label)
+                    x.append(t_encoded)
+                    y.append(y_encoded)
+            return x, y
+
+        for t in text:
+            x.append(encoder.encode(t))
+            y.append(0)
         return x, y
 
-    def data(self):
-        x = pad_sequences(self.x, dtype='int32', padding='post', truncating='post', value = 0)
-        return x, np.array(self.y, dtype=np.int32)
+    def data(self, num_categories = 19,  maxlen = None):
+        x = pad_sequences(self.x, maxlen=maxlen, dtype='int32', padding='post', truncating='post', value = 0)
+        y = to_categorical(self.y, num_classes = num_categories)
+        return x, y
 
     def __len__(self):
         return len(self.y)
+
+    def dump(self, f, encoder_y):
+        for fn, idx in self.fn2idx.items():
+            f.write(fn + '\t' + encoder_y.decode(self.y[idx]) + '\n')
 
 def readFilesInDir(dir_path, build_dict = False):
     save_path = path.join(kPrepDataDir, path.basename(dir_path) + '.pickle')
@@ -74,11 +87,10 @@ def readFilesInDir(dir_path, build_dict = False):
     return text, fn2idx
 
 
-
 def loadCorpus(labeled_fn, unlabeled_fn):
     labeled, fn2idx = readFilesInDir(labeled_fn, build_dict = True)
-    unlabeled, _ = readFilesInDir(unlabeled_fn)
-    return unlabeled, labeled, fn2idx
+    unlabeled, fn2idx_unlabeled = readFilesInDir(unlabeled_fn, build_dict = True)
+    return unlabeled, fn2idx_unlabeled, labeled, fn2idx
 
 if __name__ == '__main__':
     from encoder import Encoder, LabelEncoder
@@ -88,7 +100,7 @@ if __name__ == '__main__':
     data_dir = path.join('..', 'dataset')
     encoder_y = LabelEncoder(path.join(data_dir, 'train.tsv'))
     print('#labels=', len(encoder_y.vocab()), encoder_y.vocab())
-    unlabeled_text, labeled_text, fn2idx = loadCorpus(path.join(data_dir, 'labeled'),
+    unlabeled_text, fn2idx_unlabeled, labeled_text, fn2idx = loadCorpus(path.join(data_dir, 'labeled'),
             path.join(data_dir, 'unlabeled'))
     print('#labeled=', len(labeled_text), '#unlabeled=', len(unlabeled_text))
     encoder = Encoder(labeled_text + unlabeled_text)
@@ -105,3 +117,11 @@ if __name__ == '__main__':
             text=labeled_text, fn2idx = fn2idx,
             encoder=encoder, encoder_y=encoder_y, save_name='dev.pickle')
     print('#dev', len(dev_loader))
+    dev_x, dev_y = dev_loader.data(maxlen = train_x.shape[-1])
+    print('padded dev shape', dev_x.shape, dev_y.shape)
+
+    unlabeled_loader = DataLoader(text=unlabeled_text, fn2idx = fn2idx_unlabeled,
+            encoder=encoder, encoder_y=encoder_y, save_name='unlabeled_loader.pickle')
+    print('#unlabeled', len(unlabeled_loader))
+    with open('test.txt', 'w') as f:
+        unlabeled_loader.dump(f, encoder_y)

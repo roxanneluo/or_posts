@@ -1,10 +1,12 @@
 
 import json, logging, pickle, sys
+import numpy as np
 import os
 from os import path
 from torchnlp.text_encoders import IdentityEncoder, WhitespaceEncoder
 import torch
 import torch.nn as nn
+from pdb import set_trace as st
 
 kPrepDataDir = 'prep'
 kVocabStart = 5
@@ -25,13 +27,16 @@ class EncoderBase:
 
     def decode(self, indices):
         f = lambda x: x + self.start
+        single = isinstance(indices, int) or isinstance(indices, np.int64)
+        if single:
+            indices = [f(indices)]
+        else:
+            indices = list(map(f, indices))
         results = self.encoder.decode(indices)
-        if isinstance(labels, str):
-            return f(results)
-        return list(map(f, results))
+        return results if not single else results
 
 class LabelEncoder(EncoderBase):
-    def __init__(self, data_path):
+    def __init__(self, data_path = None):
         super().__init__()
 
         save_path = path.join(kPrepDataDir, 'labels.pt')

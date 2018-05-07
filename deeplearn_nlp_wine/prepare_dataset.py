@@ -27,10 +27,10 @@ class DataLoader:
                 self.x, self.y, self.fn2idx = state['x'], state['y'], state['fn2idx']
         else:
             self.x, self.y = self.construct_dataset(label_path, text, fn2idx, encoder, encoder_y)
+            self.fn2idx = fn2idx
             with open(filename, 'wb') as f:
-                state = {'x': self.x, 'y': self.y, 'fn2idx': fn2idx}
+                state = {'x': self.x, 'y': self.y, 'fn2idx': self.fn2idx}
                 state = pickle.dump(state, f)
-        self.fn2idx = fn2idx
 
     def construct_dataset(self, label_path, text, fn2idx, encoder, encoder_y):
         x, y = [],[]

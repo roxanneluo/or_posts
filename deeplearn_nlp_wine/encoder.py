@@ -9,8 +9,31 @@ import torch.nn as nn
 kPrepDataDir = 'prep'
 kVocabStart = 5
 
-class LabelEncoder:
+class EncoderBase:
+    def __init__(self, start = kVocabStart):
+        self.start = start
+
+    def vocab(self):
+        return self.encoder.vocab[self.start:]
+
+    def encode(self, labels):
+        f = lambda x: x - self.start
+        results = self.encoder.encode(labels)
+        if isinstance(labels, str):
+            return f(results)
+        return list(map(f, results))
+
+    def decode(self, indices):
+        f = lambda x: x + self.start
+        results = self.encoder.decode(indices)
+        if isinstance(labels, str):
+            return f(results)
+        return list(map(f, results))
+
+class LabelEncoder(EncoderBase):
     def __init__(self, data_path):
+        super().__init__()
+
         save_path = path.join(kPrepDataDir, 'labels.pt')
         if path.exists(save_path):
             with open(save_path, 'rb') as f:
@@ -24,41 +47,23 @@ class LabelEncoder:
                 label = line.split('\t')[-1][:-1]
                 labels.append(label)
         self.encoder = IdentityEncoder(labels)
-        print(self.vocab(), len(self.vocab()))
         with open(save_path, 'wb') as f:
-            pickle.dump(self.vocab()[kVocabStart:], f)
+            pickle.dump(self.vocab(), f)
 
-    def vocab(self):
-        return self.encoder.vocab[kVocabStart:]
+class Encoder(EncoderBase):
+    def __init__(self, text = None):
+        offset = 1
+        super().__init__(kVocabStart - offset)
 
-    def encode(self, labels):
-        f = lambda x: x-kVocabStart
-        results = self.encoder.encode(labels)
-        if isinstance(labels, str):
-            return f(results)
-        return list(map(f, results))
+        save_path = path.join(kPrepDataDir, 'vocab.pt')
+        if path.exists(save_path):
+            with open(save_path, 'rb') as f:
+                vocabulary = pickle.load(f)
+            self.encoder = WhitespaceEncoder(vocabulary)
+            return
 
-    def decode(self, indices):
-        return self.encoder.decode(indices)
-
-class Encoder:
-    pass
-
-
-
-"""
-
-    train [[1,2,3], ...] ,label[]
-    dev
-    unlabeled [[], ....]
-
-    train_combined = train + unlabeled
+        self.encoder = WhitespaceEncoder(text)
+        with open(save_path, 'wb') as f:
+            pickle.dump(self.vocab()[offset:], f)
 
 
-    read all texts => unlabeled [' dsfsd', 'sdfsd'] labeled, name_name_to_index dict for labeled
-    "encoder" = build encoder from labeld + unlabeled
-    "labeld_encoder" = label_encoder
-    "labeled_x, labeled_y" = build labeled(labeled, labeled + name2idx dict, 'labeled.tsv', encoder, label_encoder)
-    "dev_x", "dev_y" = build labeled(dev, dev+ name2idx dict, 'dev.tsv')
-
-"""
